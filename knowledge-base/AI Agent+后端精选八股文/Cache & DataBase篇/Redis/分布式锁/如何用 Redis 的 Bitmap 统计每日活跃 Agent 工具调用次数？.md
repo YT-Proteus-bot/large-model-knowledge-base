@@ -1,0 +1,57 @@
+---
+title: 如何用 Redis 的 Bitmap 统计每日活跃 Agent 工具调用次数？
+topic: AI Agent+后端精选八股文
+sub_topic: Cache & DataBase篇/Redis/分布式锁
+doc_type: md
+source_url: https://lcnipys9u0xh.feishu.cn/wiki/PutMwEZ8Hi7pdskFBFXcW74Hnfd
+source_path: AI Agent+后端精选八股文/Cache & DataBase篇/Redis/分布式锁/如何用 Redis 的 Bitmap 统计每日活跃 Agent 工具调用次数？.md
+questions: 0
+chars: 1470
+build_date: '2026-11-20'
+images_removed: 0
+---
+
+# 如何用 Redis 的 Bitmap 统计每日活跃 Agent 工具调用次数？
+
+> 主题：AI Agent+后端精选八股文 › Cache & DataBase篇/Redis/分布式锁　｜　原始文件：AI Agent+后端精选八股文/Cache & DataBase篇/Redis/分布式锁/如何用 Redis 的 Bitmap 统计每日活跃 Agent 工具调用次数？.md
+
+“Bitmap 是我在 Agent 场景下做去重统计的轻量级利器。它用一个比特位代表一个事件是否发生，占用内存极小，非常适合统计‘某个工具今天有没有被某个 Agent 调用过’这种布尔型指标。
+
+我把它的用法、落地细节和局限性分三层来说。
+
+## 一、数据模型：一个工具一个 Key，User 或 Agent ID 作为偏移
+
+比如我要统计 Skill weather 今天的活跃调用者，Key 设计成 tool:weather:dau:20260623，以用户或 Agent 的唯一数字 ID 作为偏移量：
+
+```
+SETBIT tool:weather:dau:20260623 user_id_123 1
+SETBIT tool:weather:dau:20260623 user_id_456 1
+```
+
+这个操作是幂等的，同一个用户重复调用，比特位保持 1，天然去重。要查今天有多少个不同 Agent 调用了这个工具，直接 BITCOUNT tool:weather:dau:20260623，返回的就是去重后的活跃数。
+
+如果需要按小时统计，Key 可以细化到小时粒度 tool:weather:dau:20260623:14。
+
+## 二、落地细节：从日志到 Bitmap 的流水线
+
+1. 采集：Agent 每次成功调用外部工具后，埋点事件携带工具名称、时间、用户 ID。
+1. 写入：事件流被消费后，同步调用 SETBIT key user_id 1。通常用 Pipeline 批量提交，降低 Redis 往返开销。
+1. 查询：所有统计页面直接通过 BITCOUNT 获取当天的去重活跃数。
+
+这种做法的内存优势非常明显。假设每天有 100 万个不同的用户 ID，Bitmap 只需要 1000000 / 8 / 1024 / 1024 ≈ 0.12 MB。而如果用 Set 存储去重用户，同样规模下内存占用要几十 MB 起步。Bitmap 在百万级规模上内存几乎是恒定的，这是它最大的价值。
+
+## 三、痛点与改良
+
+Bitmap 的局限在于用户 ID 必须是连续紧凑的数字，而现实中用户 ID 往往是分布式的雪花算法 ID 或者 UUID。直接用来当偏移量，如果最大 ID 是 10 亿但实际用户才 100 万，Bitmap 会被撑到 120MB 以上，产生大量空洞，浪费内存。
+
+改良方式有三种：
+
+- 哈希映射：用一致性哈希或简单的 user_id % 桶数 把用户 ID 映射到紧凑的数字范围。桶数根据预计最大活跃用户数设定，比如 500 万个桶，Bitmap 固定约 0.6MB，接受极小概率的碰撞（不追求绝对精确）。
+- 布隆过滤器 + Bitmap：用布隆过滤器做第一层去重，Bitmap 存已统计的用户 ID 偏移，但布隆过滤器本身也占用内存，适合统计需求更复杂的场景。
+- 改用 HyperLogLog：如果允许百分之几的误差，HyperLogLog 用更小的内存就能估算去重数，而且不需要用户 ID 连续。我们在某些对精度不敏感的看板里也在用。
+
+四、为什么不用 Set 或 ZSet？
+
+- Set：直接存用户 ID 字符串，百万级要几十 MB 内存，而且 SCARD 虽然 O(1)，但写入和内存扩展成本高。适合小规模精确统计。
+- ZSet：适合带分数的时序统计（如最近活跃时间），单纯去重用 ZSet 浪费空间。
+- Bitmap：内存最省、写入最快、去重天然，唯一要求是 ID 紧凑。
