@@ -1,5 +1,7 @@
 # 构建中间产物与缓存
 .kb-build/
+.kb-docs-build/
+knowledge-docs/_parts/
 __pycache__/
 *.pyc
 

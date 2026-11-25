@@ -16,10 +16,11 @@
 
 ## 目录结构
 
-仓库分成两层，同一份内容有两种形态：
+仓库分成三层：
 
 - **原始层**（仓库根目录的各个主题文件夹 + `*.pdf`）：从飞书知识库导出的原始 Markdown 与配套 PDF 原件，保留原排版与图示，适合直接阅读。
 - **清洗层** `knowledge-base/`：为检索重新生成的知识库。一文一文件，文件头部带 YAML 元数据（主题 / 子主题 / 来源链接 / 字数 / 题数），每道题统一为 `## 题N：…` 标题，附带 `_meta/catalog.csv` 全量目录与重复 / 解析失败的排查记录。
+- **教学层** `knowledge-docs/`：新写的 5 份面向初学者的教程型知识库（Agent 数据中台、Agent 评测中台、前端 Vue 2 / Vue 3 / React、PyTorch、Java），约 53 万字，每节自包含、可独立切片。入口见 [knowledge-docs/README.md](knowledge-docs/README.md)。
 
 主要主题：
 
