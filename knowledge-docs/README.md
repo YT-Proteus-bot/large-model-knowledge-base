@@ -8,7 +8,7 @@
 | [Agent 评测中台](agent-eval-platform.md) | Agent 评测中台 | 12 | 99,625 | 算法、测试、AI 平台开发，负责 Agent 质量的人 |
 | [前端开发（Vue 2 / Vue 3 / React）](frontend-vue-react.md) | 前端开发（Vue 2 / Vue 3 / React） | 12 | 134,989 | 前端零基础、转行、要带新人的工程师 |
 | [PyTorch](pytorch.md) | PyTorch | 11 | 113,165 | 深度学习入门、要从跑通到调优的算法工程师 |
-| [Java](java.md) | Java | 11 | 126,706 | 后端零基础、转语言、要补基础的在职开发 |
+| [Java](java.md) | Java | 11 | 128,110 | 后端零基础、转语言、要补基础的在职开发 |
 
 ## 每篇讲什么
 

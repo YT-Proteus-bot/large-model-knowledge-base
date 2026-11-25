@@ -5,7 +5,7 @@ sub_topic: Java
 doc_type: kb-doc
 level: 入门
 chapters: 11
-chars: 126706
+chars: 128110
 build_date: '2026-11-25'
 ---
 
@@ -3207,6 +3207,8 @@ public final class Order {
 
 两个高频细节。第一，参与 `hashCode` 的字段必须是不可变的：如果 `orderNo` 有 setter，对象放进 `HashSet` 后再改字段，哈希值变了，桶位置没变，这个对象就永远找不回来了，`set.size()` 还会骗人。第二，用 Lombok 的 `@Data` 或 `@EqualsAndHashCode` 时默认把全部字段纳入比较，既有可变字段的风险，也有性能开销（每次比较遍历十几个字段）；正确做法是 `@EqualsAndHashCode(onlyExplicitlyIncluded = true)` 并只标注业务主键，继承场景再加 `callSuper = true`。
 
+另一种省事的写法是用记录类（`record`，Java 16 正式引入的不可变数据载体）：`record Order(String orderNo, BigDecimal amount) {}` 会自动生成基于全部组件的 `equals`、`hashCode` 与 `toString`。它适合 DTO 与值对象，因为组件天然是 `final`，不存在「放进去又被改」的风险；但它的相等性是「所有字段都相等」，与「业务主键相同即相等」不是一回事——两个订单号相同、金额被修正过的 `record` 会被判为不等。需要按主键判等时，仍然要手写这两个方法。
+
 ### 11.3 BigDecimal：金额、税率、折扣的唯一正确选择
 
 `float` 与 `double` 用二进制表示小数，`0.1` 无法精确表示，所以 `0.1 + 0.2 == 0.30000000000000004`。金额、单价、汇率、积分这类「必须精确到分」的量只能用 `BigDecimal`（任意精度十进制数，内部由未缩放整数与 scale 两部分组成）。
@@ -3268,6 +3270,8 @@ int n = v == null ? 0 : v;          // 显式兜底
 
 同一类问题还出现在三元表达式里：`flag ? 1 : integerValue` 中若一边是基本类型，编译器会对另一边强制拆箱，`integerValue` 为 `null` 时抛 NPE，而这段代码看上去毫无风险。
 
+字符串本身还有一个更高频的错误：用 `==` 比较内容。字符串字面量会进入字符串常量池（String Pool，JVM 维护的字面量复用表），两个内容相同的字面量指向同一个实例，所以 `"a" == "a"` 为真；而 `new String("a")` 或从网络、文件、数据库读进来的字符串不在池里，`==` 立刻为假。`intern()` 能把手动创建的字符串登记进池并返回池内实例，但它占用元空间、且池的访问在高并发下有争用，只适合少量固定的枚举式取值，不要拿去「优化」动态拼接的结果。`switch` 支持字符串也只是语法糖：编译后先按 `hashCode` 分派、再用 `equals` 兜底，语义上仍然是内容比较。
+
 ### 11.5 集合的四个高频坑
 
 ```java
@@ -3295,6 +3299,8 @@ List<String> copy = new ArrayList<>(list.subList(0, 2)); // 正确：拷贝出�
 
 第四个坑是 `HashMap` 的初始容量。`new HashMap<>(16)` 的 16 不是「能装 16 个元素」，而是桶数组长度，扩容阈值是容量乘负载因子 0.75，所以 16 个桶只能无扩容装 12 个元素。已知元素数量 n 时，正确写法是 `new HashMap<>((int) (n / 0.75f) + 1)`，可以省掉多次 rehash 与数组复制。
 
+前三类错误报出的 `ConcurrentModificationException` 值得单独说一句，因为很多人以为它只在多线程下出现。它的判定依据是集合内部的修改计数 `modCount`：迭代器创建时记下快照，每次取元素前比对一次，一旦发现集合被别的路径改过就抛出。单线程在 for-each 里删除元素同样会触发，这不是并发问题，而是「用错了删除入口」。
+
 | 坑 | 现象 | 根因 | 正确做法 |
 | --- | --- | --- | --- |
 | for-each 删除 | `ConcurrentModificationException` | 迭代器 modCount 与集合不一致 | `removeIf` 或显式 `Iterator.remove` |
@@ -3306,6 +3312,8 @@ List<String> copy = new ArrayList<>(list.subList(0, 2)); // 正确：拷贝出�
 ### 11.6 空指针与资源泄漏：两类最贵的运行时问题
 
 NPE 的来源就那么几种：方法返回 `null`、自动拆箱、数组越界其实不是 NPE 但常一起出现、集合里的元素为 `null`、链式调用中途为 `null`、并发下对象被另一个线程置空。防御手段按成本从低到高是：`Objects.requireNonNull` 在入口快速失败并给出参数名；返回空集合而不是 `null`；用 `Optional` 表达「可能没有」但只用在返回值上，不要当字段或方法参数。
+
+定位 NPE 不必靠猜。JDK 14 起默认开启详细异常信息（`-XX:+ShowCodeDetailsInExceptionMessages`），消息会写成 `Cannot invoke "String.length()" because "user.name" is null`，直接把为 `null` 的表达式链点出来；编译时保留调试信息（`javac -g`，Maven 默认开启）才能让栈里的行号对上源码。此外，在方法入口用 `Objects.requireNonNull(orderId, "orderId")` 快速失败，报错会带参数名并停在调用边界，比等到第八十行才抛出的 NPE 省下的排查时间以小时计。
 
 `Optional`（Java 8 引入的容器对象，用类型显式表达「值可能不存在」）被误用最典型的是 `optional.get()` 前不做判断，那只是把 NPE 换成了 `NoSuchElementException`。`orElse` 与 `orElseGet` 的区别也值得记：前者无论是否需要都会执行参数表达式，参数里有数据库查询或远程调用时必须用后者。
 
@@ -3372,7 +3380,9 @@ void 金额相加保留两位(String a, String b, String expect) {
 }
 ```
 
-实测经验：不要 mock 值对象和 DTO，直接 `new` 出来即可；`mock` 静态方法与 `final` 类需要 Mockito 5 默认的 inline mock maker；异步逻辑用 `Awaitility` 轮询或 `CountDownLatch` 同步，绝不用 `Thread.sleep(1000)` 赌时间；一个测试只验证一个行为主题，失败时才能从方法名读出原因；覆盖率是观察指标而不是目标，分支覆盖更能反映边界是否被测到。
+测试的价值分布并不均匀，最值得写的三类是：服务层的分支逻辑、金额与时间的换算、边界的空值与越界。Controller 上的注解解析、纯 getter/setter、框架自身的配置不值得写。mock 也要克制，一个方法里 mock 了五个依赖、`when` 写了二十行，通常说明被测类职责过重，改结构比补测试有效；协作者是纯计算工具类时直接用真实对象，反而更接近线上行为。
+
+还有几条实测经验：不要 mock 值对象和 DTO，直接 `new` 出来即可；`mock` 静态方法与 `final` 类需要 Mockito 5 默认的 inline mock maker；异步逻辑用 `Awaitility` 轮询或 `CountDownLatch` 同步，绝不用 `Thread.sleep(1000)` 赌时间；一个测试只验证一个行为主题，失败时才能从方法名读出原因；覆盖率是观察指标而不是目标，分支覆盖更能反映边界是否被测到。
 
 ### 11.8 代码规范与静态检查：把评审意见写成规则
 
@@ -3394,6 +3404,8 @@ void 金额相加保留两位(String a, String b, String expect) {
 ```
 
 接入节奏建议分三步：先只做报警不阻断，跑两周统计噪声；再把 `Blocker`、`Critical` 设为阻断，其余降级为报告；最后加上「新增代码覆盖率不低于 60%」的增量门禁。一次性把历史代码全量纳入阻断，团队只会选择加 `@SuppressWarnings` 绕过。
+
+日志同样属于规范范畴，而且是最便宜的观测手段。三条惯例：用占位符而不是字符串拼接，级别判定在前、参数求值在后；异常必须把 `cause` 一起传出，只打 `e.getMessage()` 会丢掉栈；一次请求的上下文用 MDC 塞 `traceId`，散落在多个类里的日志才能串成一条链路。反向的规则是别把带手机号、身份证、银行卡的 `toString` 直接打进日志，脱敏要收口在日志适配层，不能指望每个开发者都记得。
 
 ### 11.9 两个真实排查案例
 
